@@ -30,18 +30,27 @@ export default function Upload() {
 			});
 
 			if (!response.ok) {
-				throw new Error(`Upload failed: ${response.status}`);
+				if (response.status === 401) {
+					alert("로그인이 필요합니다.");
+					navigate("/login");
+					return;
+				}
+				
+				// 서버 오류 메시지 파싱
+				const errorText = await response.text().catch(() => null);
+				const errorMessage = errorText || `업로드 실패 (${response.status})`;
+				throw new Error(errorMessage);
 			}
 
 			const json = await response.json();
-			setLoading(false);
-
 			navigate(`/editor/${json.fileName}`);
 		} catch (error) {
 			console.error("Upload error:", error);
-			alert("업로드에 실패했습니다. 로그인이 필요합니다.");
+			if (error instanceof Error && !error.message.includes('401')) {
+				alert(`업로드 실패: ${error.message}`);
+			}
+		} finally {
 			setLoading(false);
-			navigate("/login");
 		}
 	};
 
