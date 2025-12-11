@@ -21,7 +21,22 @@ repositories {
 dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
-	implementation("tools.jackson.module:jackson-module-kotlin")
+	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+	
+	// 이미지 처리 - TwelveMonkeys (고급 포맷 지원)
+	implementation("com.twelvemonkeys.imageio:imageio-core:3.12.0")
+	implementation("com.twelvemonkeys.imageio:imageio-jpeg:3.12.0")
+	implementation("com.twelvemonkeys.imageio:imageio-webp:3.12.0")
+	implementation("com.twelvemonkeys.imageio:imageio-metadata:3.12.0")
+	
+	// Thumbnailator - 고품질 리사이징 및 이미지 처리
+	implementation("net.coobird:thumbnailator:0.4.20")
+	
+	// WebP 고급 압축 (Google 공식)
+	implementation("org.sejda.imageio:webp-imageio:0.1.6")
+	
+	// Apache Commons Imaging - 다양한 포맷 및 메타데이터 처리
+	implementation("org.apache.commons:commons-imaging:1.0.0-alpha5")
 }
 
 kotlin {
@@ -30,9 +45,11 @@ kotlin {
 	}
 }
 
+/*
 tasks.processResources {
-	dependsOn("copyReactOutput")
+	dependsOn("cpoyReactOuput")
 }
+*/
 
 
 val frontendDir = "$projectDir/src/main/frontend"
