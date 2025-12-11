@@ -49,6 +49,16 @@ input[type="checkbox"] {
 	margin-right: 8px;
 }
 
+/* 로딩 애니메이션 */
+@keyframes loading {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(300%);
+	}
+}
+
 button {
 	padding: 8px 16px;
 	border: 1px solid #ccc;

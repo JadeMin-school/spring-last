@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import Navbar from '../../components/Navbar';
+import { useAuth } from '../../context/AuthContext';
 
 
 export default function Upload() {
 	const [file, setFile] = useState<File | null>(null);
 	const [loading, setLoading] = useState(false);
 	const navigate = useNavigate();
+	const { token } = useAuth();
 
 	const handleUpload = async () => {
 		if (!file) return;
@@ -15,14 +17,32 @@ export default function Upload() {
 		const form = new FormData();
 		form.append("file", file);
 
-		const response = await fetch("/api/upload", {
-			method: "POST",
-			body: form,
-		});
-		const json = await response.json();
-		setLoading(false);
+		try {
+			const headers: HeadersInit = {};
+			if (token) {
+				headers['Authorization'] = `Bearer ${token}`;
+			}
 
-		navigate(`/editor/${json.fileName}`);
+			const response = await fetch("/api/upload", {
+				method: "POST",
+				headers,
+				body: form,
+			});
+
+			if (!response.ok) {
+				throw new Error(`Upload failed: ${response.status}`);
+			}
+
+			const json = await response.json();
+			setLoading(false);
+
+			navigate(`/editor/${json.fileName}`);
+		} catch (error) {
+			console.error("Upload error:", error);
+			alert("업로드에 실패했습니다. 로그인이 필요합니다.");
+			setLoading(false);
+			navigate("/login");
+		}
 	};
 
 

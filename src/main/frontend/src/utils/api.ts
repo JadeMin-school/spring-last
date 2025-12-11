@@ -2,8 +2,19 @@
  * API 호출 유틸리티
  */
 
+function getAuthHeaders(): HeadersInit {
+	const token = localStorage.getItem('token');
+	const headers: HeadersInit = {};
+	if (token) {
+		headers['Authorization'] = `Bearer ${token}`;
+	}
+	return headers;
+}
+
 export async function fetchImageInfo(fileName: string) {
-	const response = await fetch(`/api/info/${fileName}`);
+	const response = await fetch(`/api/info/${fileName}`, {
+		headers: getAuthHeaders()
+	});
 	if (!response.ok) throw new Error('Failed to fetch image info');
 	return response.json();
 }
@@ -11,7 +22,10 @@ export async function fetchImageInfo(fileName: string) {
 export async function executeResize(fileName: string, body: Record<string, unknown>) {
 	const response = await fetch(`/api/resize/${fileName}`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: { 
+			'Content-Type': 'application/json',
+			...getAuthHeaders()
+		},
 		body: JSON.stringify(body),
 	});
 	
@@ -26,7 +40,10 @@ export async function executeResize(fileName: string, body: Record<string, unkno
 export async function executeCompress(fileName: string, body: Record<string, unknown>) {
 	const response = await fetch(`/api/compress/${fileName}`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: { 
+			'Content-Type': 'application/json',
+			...getAuthHeaders()
+		},
 		body: JSON.stringify(body),
 	});
 	

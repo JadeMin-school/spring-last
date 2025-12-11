@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useNavigate } from 'react-router';
 import Navbar from '../../components/Navbar';
 import ImagePanel from '../../components/ImagePanel';
 import type * as Types from '../../types';
 import { getAvailableMethodsForFormat, getDefaultMethodForFormat, COMPRESSION_METHOD_LABELS } from '../../utils/compression';
 import { formatFileSize } from '../../utils/format';
 import { fetchImageInfo, executeResize, executeCompress } from '../../utils/api';
+import { projectStorage } from '../../utils/projectStorage';
 
 type ResizeAlgorithm = Types.ResizeAlgorithm;
 type OutputFormat = Types.OutputFormat;
 type CompressionMethod = Types.CompressionMethod;
-type DitheringMethod = Types.DitheringMethod;
 type ImageInfo = Types.ImageInfo;
 type Result = Types.Result;
 
@@ -20,13 +20,15 @@ function ResizeTab({
 	originalInfo,
 	onExecute,
 	loading,
-	error
+	error,
+	onValidationChange
 }: {
 	originalFile: string;
 	originalInfo: ImageInfo | null;
 	onExecute: (body: Record<string, unknown>) => void;
 	loading: boolean;
 	error: string | null;
+	onValidationChange?: (valid: boolean, execute: () => void) => void;
 }) {
 	const [sizeMode, setSizeMode] = useState<'dimensions' | 'percent'>('dimensions');
 	const [width, setWidth] = useState<number | ''>('');
@@ -65,6 +67,12 @@ function ResizeTab({
 	const resizeValidationError = !canResize 
 		? '너비, 높이, 또는 퍼센트 중 하나는 지정해야 합니다.' 
 		: null;
+	
+	useEffect(() => {
+		if (onValidationChange) {
+			onValidationChange(canResize, handleResize);
+		}
+	}, [canResize, width, height, scalePercent, algorithm, outputFormat, quality, maintainAspectRatio, sizeMode]);
 	
 	const handleResize = () => {
 		const body: Record<string, unknown> = {
@@ -198,14 +206,7 @@ function ResizeTab({
 				)}
 			</div>
 			
-			{error && <p style={{ color: 'red' }}>{error}</p>}
 			{resizeValidationError && <p style={{ color: 'orange' }}>{resizeValidationError}</p>}
-			
-			<div>
-				<button onClick={handleResize} disabled={loading || !canResize}>
-					{loading ? '처리 중...' : '리사이즈 실행'}
-				</button>
-			</div>
 		</div>
 	);
 }
@@ -216,13 +217,15 @@ function CompressTab({
 	originalInfo,
 	onExecute,
 	loading,
-	error
+	error,
+	onValidationChange
 }: {
 	originalFile: string;
 	originalInfo: ImageInfo | null;
 	onExecute: (body: Record<string, unknown>) => void;
 	loading: boolean;
 	error: string | null;
+	onValidationChange?: (valid: boolean, execute: () => void) => void;
 }) {
 	// 출력 포맷을 먼저 선택
 	const [outputFormat, setOutputFormat] = useState<OutputFormat | ''>('');
@@ -312,6 +315,12 @@ function CompressTab({
 		: !canCompress ? '품질은 1-100 사이 값이어야 합니다.' 
 		: (targetSizeMode !== 'none' && !targetSizeValue) ? '목표 크기를 입력하세요.' 
 		: null;
+	
+	useEffect(() => {
+		if (onValidationChange) {
+			onValidationChange(canCompress, handleCompress);
+		}
+	}, [canCompress, quality, method, outputFormat, targetSizeMode, targetSizeValue, optimize, stripMetadata, progressive, smoothingFactor]);
 	
 	return (
 		<div className="column">
@@ -443,28 +452,49 @@ function CompressTab({
 				</>
 			)}
 			
-			{error && <p style={{ color: 'red' }}>{error}</p>}
 			{validationError && <p style={{ color: 'orange' }}>{validationError}</p>}
-			
-			<div>
-				<button onClick={handleCompress} disabled={loading || !canCompress}>
-					{loading ? '처리 중...' : '압축 실행'}
-				</button>
-			</div>
 		</div>
 	);
 }
 
 // 메인 Editor 컴포넌트
 export default function Editor() {
-	const { fileName } = useParams<{ fileName: string }>();
+	const { fileName, id } = useParams<{ fileName?: string; id?: string }>();
+	const navigate = useNavigate();
 	
 	const [activeTab, setActiveTab] = useState<'resize' | 'compress'>('resize');
-	const [originalFile] = useState(fileName);
+	const [originalFile, setOriginalFile] = useState(fileName);
 	const [originalInfo, setOriginalInfo] = useState<ImageInfo | null>(null);
 	const [result, setResult] = useState<Result | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [projectName, setProjectName] = useState('');
+	const [showSaveDialog, setShowSaveDialog] = useState(false);
+	const [isProjectMode, setIsProjectMode] = useState(false);
+	const [canExecute, setCanExecute] = useState(false);
+	const [executeAction, setExecuteAction] = useState<(() => void) | null>(null);
+	
+	// 프로젝트 모드 초기화
+	useEffect(() => {
+		if (id) {
+			const project = projectStorage.getById(id);
+			if (project) {
+				setIsProjectMode(true);
+				setProjectName(project.name);
+				setOriginalFile(project.originalFileName);
+				
+				// 설정값 복원
+				if (project.settings) {
+					if (project.settings.width || project.settings.height) {
+						setActiveTab('resize');
+					}
+					if (project.settings.format || project.settings.quality) {
+						setActiveTab('compress');
+					}
+				}
+			}
+		}
+	}, [id]);
 	
 	useEffect(() => {
 		if (!originalFile) return;
@@ -506,12 +536,163 @@ export default function Editor() {
 			setLoading(false);
 		}
 	};
+
+	const handleSaveProject = () => {
+		if (!originalFile) return;
+
+		const name = projectName.trim() || `프로젝트 ${new Date().toLocaleDateString()}`;
+		
+		try {
+			// 설정값만 저장
+			const settings: any = {};
+			if (result) {
+				if (activeTab === 'resize') {
+					settings.algorithm = 'LANCZOS';
+				} else if (activeTab === 'compress') {
+					settings.format = result.mimeType?.split('/')[1] || 'unknown';
+					if ('method' in result) {
+						settings.method = (result as Types.CompressResult).method;
+					}
+				}
+			}
+			
+			projectStorage.save({
+				name,
+				originalFileName: originalFile,
+				settings,
+			});
+
+			setShowSaveDialog(false);
+			setProjectName('');
+			alert('프로젝트가 저장되었습니다!');
+			navigate('/projects');
+		} catch (error) {
+			console.error('프로젝트 저장 오류:', error);
+			alert('프로젝트 저장 중 오류가 발생했습니다.');
+		}
+	};
 	
 	return (
 		<div className="container">
 			<Navbar />
 			
-			<h1>이미지 편집기</h1>
+			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+				<h1 style={{ margin: 0 }}>이미지 편집기</h1>
+				
+				<div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+					<button
+						onClick={() => executeAction?.()}
+						disabled={loading || !canExecute || !originalFile}
+						style={{
+							padding: '8px 16px',
+							backgroundColor: canExecute && !loading ? '#007bff' : '#ccc',
+							color: 'white',
+							border: 'none',
+							borderRadius: '4px',
+							cursor: canExecute && !loading ? 'pointer' : 'not-allowed',
+							fontSize: '14px',
+							fontWeight: '500'
+						}}
+					>
+						{loading ? '⏳ 처리 중...' : activeTab === 'resize' ? '🔄 리사이즈' : '🗜️ 압축'}
+					</button>
+					
+					{showSaveDialog ? (
+						<div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+							<input
+								type="text"
+								placeholder="프로젝트 이름"
+								value={projectName}
+								onChange={(e) => setProjectName(e.target.value)}
+								style={{
+									padding: '7px 10px',
+									border: '2px solid #28a745',
+									borderRadius: '4px',
+									width: '160px',
+									fontSize: '14px'
+								}}
+							/>
+							<button
+								onClick={handleSaveProject}
+								style={{
+									padding: '8px 14px',
+									backgroundColor: '#28a745',
+									color: 'white',
+									border: 'none',
+									borderRadius: '4px',
+									cursor: 'pointer',
+									fontSize: '14px',
+									fontWeight: '500'
+								}}
+							>
+								✓
+							</button>
+							<button
+								onClick={() => setShowSaveDialog(false)}
+								style={{
+									padding: '8px 14px',
+									backgroundColor: '#6c757d',
+									color: 'white',
+									border: 'none',
+									borderRadius: '4px',
+									cursor: 'pointer',
+									fontSize: '14px'
+								}}
+							>
+								✕
+							</button>
+						</div>
+					) : (
+						<button
+							onClick={() => setShowSaveDialog(true)}
+							disabled={!result}
+							style={{
+								padding: '8px 16px',
+								backgroundColor: result ? '#28a745' : '#ccc',
+								color: 'white',
+								border: 'none',
+								borderRadius: '4px',
+								cursor: result ? 'pointer' : 'not-allowed',
+								fontSize: '14px',
+								fontWeight: '500'
+							}}
+						>
+							📁 프로젝트 저장
+						</button>
+					)}
+				</div>
+			</div>
+			
+			{loading && (
+				<div style={{
+					width: '100%',
+					height: '4px',
+					backgroundColor: '#e0e0e0',
+					borderRadius: '2px',
+					overflow: 'hidden',
+					marginBottom: '20px'
+				}}>
+					<div style={{
+						width: '50%',
+						height: '100%',
+						backgroundColor: '#007bff',
+						animation: 'loading 1.5s ease-in-out infinite',
+					}}></div>
+				</div>
+			)}
+			
+			{error && (
+				<div style={{
+					padding: '12px 20px',
+					backgroundColor: '#fee',
+					color: '#c33',
+					borderRadius: '6px',
+					marginBottom: '20px',
+					border: '1px solid #fcc'
+				}}>
+					⚠️ {error}
+				</div>
+			)}
 			
 		<div className="row">
 			{originalInfo && (
@@ -529,7 +710,9 @@ export default function Editor() {
 					result={result}
 				/>
 			)}
-		</div>			<div className="tabs">
+		</div>
+		
+		<div className="tabs">
 				<button
 					className={`tab ${activeTab === 'resize' ? 'active' : ''}`}
 					onClick={() => setActiveTab('resize')}
@@ -551,6 +734,10 @@ export default function Editor() {
 					onExecute={handleResize}
 					loading={loading}
 					error={error}
+					onValidationChange={(valid, execute) => {
+						setCanExecute(valid);
+						setExecuteAction(() => execute);
+					}}
 				/>
 			) : (
 				<CompressTab
@@ -559,6 +746,10 @@ export default function Editor() {
 					onExecute={handleCompress}
 					loading={loading}
 					error={error}
+					onValidationChange={(valid, execute) => {
+						setCanExecute(valid);
+						setExecuteAction(() => execute);
+					}}
 				/>
 			)}
 		</div>
